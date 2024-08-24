@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchTasks, createTask, fetchProjects, fetchTeamMembers } from "../api";
 
-// ProjectSidebar Component
-const ProjectSidebar = ({ projects, teamMembers }) => (
+
+// Sidebar Component
+const Sidebar = ({ projects, teamMembers }) => (
   <div style={styles.sidebar}>
     <h3>Projects</h3>
     <ul style={styles.list}>
@@ -22,19 +24,78 @@ const ProjectSidebar = ({ projects, teamMembers }) => (
   </div>
 );
 
+// TaskForm Component
+const TaskForm = ({ onClose, onSave }) => {
+  const [task, setTask] = useState({
+    title: "",
+    category: "",
+    status: "To Do",
+    members: [],
+    comments: 0,
+    files: 0,
+    priority: "Medium",
+    deadline: "",
+    duration: "",
+  });
+
+  const handleChange = (e) => {
+    setTask({ ...task, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async () => {
+    try {
+      await createTask(task);
+      onSave(task);
+      onClose();
+    } catch (error) {
+      console.error('Error saving task:', error);
+    }
+  };
+
+  return (
+    <div style={styles.modal}>
+      <h3>Create New Task</h3>
+      <label>
+        Title:
+        <input type="text" name="title" value={task.title} onChange={handleChange} />
+      </label>
+      <label>
+        Category:
+        <input type="text" name="category" value={task.category} onChange={handleChange} />
+      </label>
+      <label>
+        Priority:
+        <select name="priority" value={task.priority} onChange={handleChange}>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+      </label>
+      <label>
+        Deadline:
+        <input type="date" name="deadline" value={task.deadline} onChange={handleChange} />
+      </label>
+      <label>
+        Duration:
+        <input type="text" name="duration" value={task.duration} onChange={handleChange} />
+      </label>
+      <button onClick={handleSubmit}>Save Task</button>
+      <button onClick={onClose}>Cancel</button>
+    </div>
+  );
+};
+
 // TaskColumn Component
 const TaskColumn = ({ status, tasks }) => (
   <div style={styles.taskColumn}>
     <h3>{status}</h3>
     {tasks.map((task, index) => (
       <div style={styles.taskCard} key={index}>
-        <span style={styles.taskCategory}>{task.category}</span>
         <h4>{task.title}</h4>
-        <div style={styles.taskInfo}>
-          <span>Members: {task.members.join(", ")}</span>
-          <span>Comments: {task.comments}</span>
-          <span>Files: {task.files}</span>
-        </div>
+        <p style={styles.taskCategory}>{task.category}</p>
+        <p style={styles.taskInfo}>Priority: {task.priority}</p>
+        <p style={styles.taskInfo}>Deadline: {task.deadline}</p>
+        <p style={styles.taskInfo}>Duration: {task.duration}</p>
       </div>
     ))}
   </div>
@@ -59,45 +120,81 @@ const TaskBoard = ({ tasks }) => {
 
 // Dashboard Component
 const Dashboard = () => {
-  const [projects] = useState(["Piper Enterprise", "Web platform", "Mobile Loop", "Wire Mobile App"]);
-  const [teamMembers] = useState([
-    { name: "Karen Smith", status: "Online", time: "05:23:46" },
-    { name: "Steve McConnell", status: "Offline", time: "12:03:12" },
-    { name: "Sarah Green", status: "Offline", time: "10:28:56" },
-    { name: "Brad Smith", status: "Online", time: "11:03:48" },
-    { name: "Alice Connell", status: "Online", time: "06:49:52" },
-  ]);
-  const [tasks] = useState([
-    { title: "Wireframing", category: "UX stages", status: "To Do", members: [1, 2, 3], comments: 8, files: 11 },
-    { title: "Customer Journey Mapping", category: "UX stages", status: "In Progress", members: [1, 2], comments: 3, files: 4 },
-    { title: "Competitor research", category: "UX stages", status: "Need Review", members: [2, 4], comments: 5, files: 7 },
-    { title: "Branding, visual identity", category: "Branding", status: "Done", members: [3, 4, 5], comments: 2, files: 5 },
-  ]);
+  const [tasks, setTasks] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [filter, setFilter] = useState("Priority");
+
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const tasksData = await fetchTasks();
+        setTasks(tasksData);
+        const projectsData = await fetchProjects();
+        setProjects(projectsData);
+        const teamMembersData = await fetchTeamMembers();
+        setTeamMembers(teamMembersData);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      }
+    };
+    loadData();
+  }, []);
+
+  const addTask = async (newTask) => {
+    try {
+      await createTask(newTask);
+      setTasks([...tasks, newTask]);
+    } catch (error) {
+      console.error('Error adding task:', error);
+    }
+  };
+
+  const sortedTasks = tasks.sort((a, b) => {
+    if (filter === "Priority") {
+      return a.priority.localeCompare(b.priority);
+    } else if (filter === "Deadline") {
+      return new Date(a.deadline) - new Date(b.deadline);
+    } else if (filter === "Duration") {
+      return parseInt(a.duration) - parseInt(b.duration);
+    }
+    return 0;
+  });
 
   return (
     <div style={styles.container}>
-      <ProjectSidebar projects={projects} teamMembers={teamMembers} />
+      <Sidebar projects={projects} teamMembers={teamMembers} />
       <div style={styles.mainContent}>
         <h2>Piper Enterprise</h2>
-        <TaskBoard tasks={tasks} />
+        <button onClick={() => setShowTaskForm(true)} style={styles.addButton}>Add Task</button>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)} style={styles.filter}>
+          <option value="Priority">Priority</option>
+          <option value="Deadline">Deadline</option>
+          <option value="Duration">Duration</option>
+        </select>
+        <TaskBoard tasks={sortedTasks} />
       </div>
+      {showTaskForm && <TaskForm onClose={() => setShowTaskForm(false)} onSave={addTask} />}
     </div>
   );
 };
 
-export default Dashboard;
-
-// CSS in JS
 const styles = {
   container: { display: 'flex', fontFamily: 'Arial, sans-serif', height: '100vh', padding: '20px' },
-  sidebar: { width: '20%', padding: '20px', background: '#f7f7f7', borderRadius: '10px' },
-  list: { listStyleType: 'none', padding: '0' },
-  listItem: { padding: '10px 0', borderBottom: '1px solid #ddd' },
-  status: { color: '#4caf50', fontWeight: 'bold' },
+  sidebar: { width: '250px', padding: '20px', background: '#f4f4f4', borderRadius: '10px', marginRight: '20px' },
+  list: { listStyleType: 'none', padding: 0 },
+  listItem: { padding: '10px', borderBottom: '1px solid #ddd' },
+  status: { float: 'right', color: '#777' },
   mainContent: { flex: 1, padding: '20px' },
   taskColumns: { display: 'flex', justifyContent: 'space-between' },
   taskColumn: { width: '24%', padding: '10px', background: '#f7f7f7', borderRadius: '10px' },
   taskCard: { padding: '10px', background: '#fff', margin: '10px 0', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' },
   taskCategory: { color: '#888', fontSize: '12px' },
   taskInfo: { fontSize: '12px', color: '#555' },
+  addButton: { margin: '10px 0', padding: '10px 20px', background: '#4caf50', color: '#fff', border: 'none', borderRadius: '5px' },
+  filter: { margin: '10px 0', padding: '5px', borderRadius: '5px' },
+  modal: { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', background: '#fff', padding: '20px', borderRadius: '10px', boxShadow: '0 4px 8px rgba(0,0,0,0.2)' },
 };
+
+export default Dashboard;
